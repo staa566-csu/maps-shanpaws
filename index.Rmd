@@ -1,0 +1,222 @@
+---
+title: "566 Homework 3"
+author: "Shannon Jaskiewicz"
+output:
+  html_document:
+    df_print: paged
+  word_document:
+    reference_docx: PracticeLectureWordStyles_reference.docx
+  pdf_document: default
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, echo = FALSE}
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(plotly))
+suppressPackageStartupMessages(library(tigris))
+suppressPackageStartupMessages(library(geofacet))
+suppressPackageStartupMessages(library(leaflet))
+suppressPackageStartupMessages(library(leafpop))
+suppressPackageStartupMessages(library(statebins))
+suppressPackageStartupMessages(library(raster))
+suppressPackageStartupMessages(library(sf))
+suppressPackageStartupMessages(library(spData))
+suppressPackageStartupMessages(library(tmap))
+suppressPackageStartupMessages(library(ggdendro))
+suppressPackageStartupMessages(library(mapview))
+```
+
+
+I wanted to look at COVID data for the state of Iowa and drill down to the county level to see if there are any disparities between cases per 100,000 population and deaths per 100,000 population.  It would be important to note which counties don't have a lot of cases but do have a lot of deaths, realtively speaking.  Since many guidelines and practices were established at the local level, it is reasonable to expect differences in outcomes across the counties.  It would be beneficial to see if there are any counties who do have a lot of cases but not a lot of deaths, relatively speaking.  Potentially, much could be learned from these counties' processes in dealing with COVID.
+
+
+```{r, eval = FALSE}
+
+# get code from the class github to download covid data
+
+rm(list=ls())
+library(tidyverse)
+library(tidycensus)
+
+# download data
+
+covid.state <- read_csv("https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-states.csv")
+covid.state <- covid_state %>%
+  arrange(state,date) %>%
+  group_by(state) %>%
+  mutate(cases.1day  = cases  - lag(cases,1),
+         deaths.1day = deaths - lag(deaths,1),
+         cases.7day  = zoo::rollmean(cases_1day, 7, fill=NA, align="right"),
+         deaths.7day = zoo::rollmean(deaths_1day, 7, fill=NA, align="right"),
+         cases.14day  = zoo::rollmean(cases_1day, 14, fill=NA, align="right"),
+         deaths.14day = zoo::rollmean(deaths_1day, 14, fill=NA, align="right"))
+head(covid.state, n=20)
+
+covid.county <- read_csv("https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv")
+covid.county <- covid_county %>%
+  arrange(state,county,date) %>%
+  group_by(county) %>%
+  mutate(cases.1day  = cases  - lag(cases,1),
+         deaths.1day = deaths - lag(deaths,1),
+         cases.7day  = zoo::rollmean(cases_1day, 7, fill=NA, align="right"),
+         deaths.7day = zoo::rollmean(deaths_1day, 7, fill=NA, align="right"),
+         cases.14day  = zoo::rollmean(cases_1day, 14, fill=NA, align="right"),
+         deaths.14day = zoo::rollmean(deaths_1day, 14, fill=NA, align="right"))
+head(covid.county, n=20)
+
+# get and save api key
+
+apikey <- "123"
+census.api.key("123", install=TRUE, overwrite = TRUE)
+```
+
+
+```{r, eval = FALSE}
+readRenviron("~/.Renviron")
+Sys.getenv("CENSUS.API.KEY")
+```
+
+
+```{r, eval = FALSE}
+
+# get variables and codes (as per github)
+View(sf1)
+
+sf1 <- load_variables(2010, "sf1", cache = TRUE)
+head(sf1)
+
+# get population data
+
+state.pop <- get_decennial(geography = "state", 
+                           variables = "P001001", 
+                           year = 2010)
+head(state.pop)
+
+
+
+county.pop <- get_decennial(geography = "county", 
+                           variables = "P001001", 
+                           year = 2010)
+head(county.pop)
+
+
+# merge population and covid data
+#state.pop <- state.pop %>% select(fips=GEOID, pop2010=value)
+#head(state.pop)
+names(state.pop)[names(state.pop) == "GEOID"] <- "fips"
+names(state.pop)[names(state.pop) == "value"] <- "pop2010"
+head(state.pop)
+
+#county.pop2 <- county.pop %>% select(fips=GEOID, pop2010=value)
+#head(county.pop2)
+names(county.pop)[names(county.pop) == "GEOID"] <- "fips"
+names(county.pop)[names(county.pop) == "value"] <- "pop2010"
+head(county.pop)
+
+# normalize state cases
+covid.state <- covid_state %>% 
+  left_join(state.pop, by="fips") %>%
+  mutate(cases.per100k = 100000*cases / pop2010,
+         deaths.per100k = 100000*deaths / pop2010,
+         cases.per1k = 1000*cases / pop2010,
+         deaths.per1k = 1000*deaths / pop2010,
+         cases.1day.per100k = 100000*cases_1day/pop2010,
+         deaths.1day.per100k = 100000*deaths_1day/pop2010,
+         cases.7day.per100k = 100000*cases_7day/pop2010,
+         deaths.7day.per100k = 100000*deaths_7day/pop2010,
+         cases.14day.per100k = 100000*cases_14day/pop2010,
+         deaths.14day.per100k = 100000*deaths_14day/pop2010)
+save(covid.state, file="covid.state.rda")
+dim(covid.state)
+
+# normalize county cases
+covid.county <- covid_county %>% 
+  left_join(county.pop, by="fips") %>%
+  mutate(cases.per100k = 100000*cases / pop2010,
+         deaths.per100k = 100000*deaths / pop2010,
+         cases.per1k = 1000*cases / pop2010,
+         deaths.per1k = 1000*deaths / pop2010,
+         cases.1day.per100k = 100000*cases_1day/pop2010,
+         deaths.1day.per100k = 100000*deaths_1day/pop2010,
+         cases.7day.per100k = 100000*cases_7day/pop2010,
+         deaths.7day.per100k = 100000*deaths_7day/pop2010,
+         cases.14day.per100k = 100000*cases_14day/pop2010,
+         deaths.14day.per100k = 100000*deaths_14day/pop2010)
+save(covid.county, file="covid.county.rda")
+dim(covid.county)
+```
+
+
+
+```{r}
+load(file = 'covid.state.rda')
+load(file = 'covid.county.rda')
+
+# get longitude and latitudes for the U.S.
+us.counties.covid <- map_data("county") %>%
+  mutate(region = str_to_title(region),
+         subregion = str_to_title(subregion)) %>%
+  left_join(covid.county %>% filter(date == max(date)),
+            by = c("region" = "state", "subregion" = "county"))
+
+# subset for the state of Iowa
+iowa.counties.covid <- us.counties.covid %>%
+  filter(region == "Iowa")
+
+# make map of Iowa's cases per 100,000 people by county
+p.covid.iowa.cases <- ggplot(data = iowa.counties.covid,
+                                mapping = aes(x = long,
+                                              y = lat,
+                                              group = group,
+                                              order = order,
+                                              fill = cases.per100k,
+                                              text = paste("County:", subregion,
+                                                           "Cases per 100k population:", round(cases.per100k), sep = "\n"))) +
+  geom_polygon(color = "black") +
+  ggdendro::theme_dendro() +
+  scale_fill_viridis_b(option = "magma", direction = -1) +
+  guides(fill = guide_legend(title = "Cases per 100k")) +
+#  ggtitle("Iowa COVID Cases by County") +
+  coord_map()
+
+# make map of Iowa's deaths per 100k people by county
+p.covid.iowa.deaths <- ggplot(data = iowa.counties.covid,
+                                mapping = aes(x = long,
+                                              y = lat,
+                                              group = group,
+                                              order = order,
+                                              fill = deaths.per100k,
+                                              text = paste("County:", subregion, sep = "<br>", "Deaths per 100k population:", round(deaths.per100k)))) +
+  geom_polygon(color = "black") +
+  ggdendro::theme_dendro() +
+  scale_fill_viridis_b(option = "magma", direction = -1) +
+  guides(fill = guide_legend(title = "Deaths per 100k")) +
+#  ggtitle("Iowa COVID Deaths by County") +
+  coord_map()
+p.covid.iowa.cases
+p.covid.iowa.deaths
+```
+
+
+
+```{r, fig.width = 10, fig.height = 5}
+# add tooltip and pair together
+iowa.county.covid.cases <- ggplotly(p.covid.iowa.cases, tooltip = "text")
+iowa.county.covid.deaths <- ggplotly(p.covid.iowa.deaths, tooltip = "text")
+iowa.county.covid.cases.deaths <- subplot(iowa.county.covid.cases, iowa.county.covid.deaths)
+iowa.county.covid.cases.deaths
+```
+
+
+
+```{r, eval = FALSE, echo = FALSE}
+
+saveWidget(as_widget(iowa.county.covid.cases.deaths), "iowa.county.covid.cases.deaths.html")
+save(boston.combo, file="iowa.county.covid.cases.deaths.rda")
+```
